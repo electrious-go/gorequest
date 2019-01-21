@@ -3,11 +3,13 @@ package gorequest
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httputil"
@@ -91,12 +93,13 @@ type SuperAgent struct {
 	Retryable            superAgentRetryable
 	DoNotClearSuperAgent bool
 	isClone              bool
+	context              context.Context
 }
 
 var DisableTransportSwap = false
 
 // Used to create a new SuperAgent object.
-func New() *SuperAgent {
+func New(ctx ...context.Context) *SuperAgent {
 	cookiejarOptions := cookiejar.Options{
 		PublicSuffixList: publicsuffix.List,
 	}
@@ -123,6 +126,10 @@ func New() *SuperAgent {
 		CurlCommand:       false,
 		logger:            log.New(os.Stderr, "[gorequest]", log.LstdFlags),
 		isClone:           false,
+		context:           context.Background(),
+	}
+	if len(ctx) >= 1 {
+		s.context = ctx[0]
 	}
 	// disable keep alives by default, see this issue https://github.com/parnurzeal/gorequest/issues/75
 	s.Transport.DisableKeepAlives = true
@@ -234,6 +241,7 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		Retryable:            copyRetryable(s.Retryable),
 		DoNotClearSuperAgent: true,
 		isClone:              true,
+		context:              s.context,
 	}
 	return clone
 }
@@ -1138,6 +1146,20 @@ func (s *SuperAgent) EndStruct(v interface{}, callback ...func(response Response
 	return resp, body, nil
 }
 
+// IsTimeoutErr tells you if the error is timout err
+func IsTimeoutErr(err error) bool {
+	if err == context.Canceled {
+		return true
+	}
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		return true
+	}
+	if err, ok := err.(*url.Error); ok {
+		return IsTimeoutErr(err.Err)
+	}
+	return false
+}
+
 func (s *SuperAgent) getResponseBytes() (Response, []byte, []error) {
 	var (
 		req  *http.Request
@@ -1397,7 +1419,7 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 		req.AddCookie(cookie)
 	}
 
-	return req, nil
+	return req.WithContext(s.context), nil
 }
 
 // AsCurlCommand returns a string representing the runnable `curl' command

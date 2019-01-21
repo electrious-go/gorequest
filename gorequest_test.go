@@ -2,6 +2,7 @@ package gorequest
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -269,6 +270,36 @@ func TestGet(t *testing.T) {
 	New().Get(ts.URL+case2_set_header).
 		Set("API-Key", "fookey").
 		End()
+}
+
+// testing for Get method
+func TestContext(t *testing.T) {
+	const case1_empty = "/"
+	const case2_set_header = "/set_header"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	defer ts.Close()
+
+	_, _, errs := New(context.Background()).Get(ts.URL).End()
+	if len(errs) != 0 {
+		t.FailNow()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, errs = New(ctx).Get(ts.URL).End()
+
+	if len(errs) == 0 {
+		t.FailNow()
+	}
+
+	if errs[0].(*url.Error).Err != context.Canceled {
+		t.FailNow()
+	}
+
+	if !IsTimeoutErr(errs[0]) {
+		t.FailNow()
+	}
 }
 
 // testing for Get method.. but clone our base.
